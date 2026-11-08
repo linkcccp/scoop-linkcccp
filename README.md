@@ -27,9 +27,12 @@ Unlike the stock installer, the portable package runs without UAC and makes **no
 
 [WinApp CLI](https://github.com/microsoft/winappCli) is Microsoft's command-line tool for Windows SDK setup, MSIX packaging, package identity, manifests, certificates, and build tools (MIT).
 
-The bucket installs the upstream **portable x64 release** (`winappcli-x64.zip`, no installer):
+The bucket publishes a **portable x64 package** (`winappcli-x64.zip`) repackaged from the upstream release:
 
-- `winapp.exe` — the CLI, together with its native dependencies
+- `winapp.exe` — the CLI
+- `libSkiaSharp.dll`, `libHarfBuzzSharp.dll`, `WinApp.DevTools.Managed.dll`, `WinApp.DevTools.Native.dll` — native and DevTools dependencies
+- `winapp-devtools-schema.json`, `LICENSE.txt` — DevTools schema and upstream MIT license
+- Debug symbols (`*.pdb`) are removed to keep the download small
 
 Unlike the WinGet/MSIX distribution, this build runs unpackaged, so `winapp run` can register and unregister development packages normally (the MSIX build runs in a package container where deployment calls fail).
 
@@ -68,9 +71,9 @@ A scheduled GitHub Action runs daily per app:
 
 1. [update-epubcheck.yml](.github/workflows/update-epubcheck.yml) detects the latest upstream EPUBCheck release and the latest Temurin 21 JRE, downloads both, verifies checksums, assembles and smoke-tests a bundled release archive, publishes a release tagged `v<epubcheck>-jre<jre>` (e.g. `v5.4.0-jre21.0.12.1`) and updates [bucket/epubcheck.json](bucket/epubcheck.json).
 2. [update-openreadest.yml](.github/workflows/update-openreadest.yml) detects the latest upstream OpenReadest release, verifies the installer against the upstream digest, extracts it with 7-Zip into a portable package (static smoke test, license files included), publishes a release tagged `openreadest-v<version>` (e.g. `openreadest-v0.9.100`) and updates [bucket/openreadest.json](bucket/openreadest.json).
-3. [update-winappcli.yml](.github/workflows/update-winappcli.yml) detects the latest upstream WinApp CLI release, downloads and verifies `winappcli-x64.zip`, smoke-tests `winapp.exe --version`, and updates [bucket/winappcli.json](bucket/winappcli.json) in place (the manifest points directly at the upstream release asset).
+3. [update-winappcli.yml](.github/workflows/update-winappcli.yml) detects the latest upstream WinApp CLI release, verifies `winappcli-x64.zip`, strips debug symbols, adds the upstream LICENSE, smoke-tests `winapp.exe --version`, publishes a release tagged `winappcli-v<version>` (e.g. `winappcli-v0.8.0`) and updates [bucket/winappcli.json](bucket/winappcli.json).
 
-OpenReadest releases are published with `--latest=false` so the EPUBCheck release keeps the repository's *latest* badge.
+OpenReadest and WinApp CLI releases are published with `--latest=false` so the EPUBCheck release keeps the repository's *latest* badge.
 
 The manifests can also be refreshed manually with `scoop update` / `scoop status` after a release is published.
 

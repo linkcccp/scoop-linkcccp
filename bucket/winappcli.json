@@ -10,6 +10,6 @@
         "github": "https://github.com/microsoft/winappCli"
     },
     "autoupdate": {
-        "url": "https://github.com/microsoft/winappCli/releases/download/v$version/winappcli-x64.zip"
+        "url": "https://github.com/linkcccp/scoop-epubcheck/releases/download/winappcli-v$version/winappcli-x64.zip"
     }
 }
