@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       force:
-        description: 'Force rebuild even if the version is unchanged'
+        description: 'Force update even if the version is unchanged'
         type: boolean
         default: false
 
@@ -20,7 +20,7 @@ concurrency:
 jobs:
   update:
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     defaults:
       run:
         shell: pwsh
@@ -60,18 +60,17 @@ jobs:
           }
           out 'skip'   ($skip.ToString().ToLower())
           out 'ver'    $ver
-          out 'tag'    $tag
           out 'url'    $asset.browser_download_url
           out 'digest' "$($asset.digest)"
 
-      - name: Download and verify upstream
+      - name: Download and verify
         if: steps.ver.outputs.skip != 'true'
         id: dl
         run: |
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $false
 
-          $zip = Join-Path $env:RUNNER_TEMP 'upstream-winappcli-x64.zip'
+          $zip = Join-Path $env:RUNNER_TEMP 'winappcli-x64.zip'
           Write-Host "Downloading ${{ steps.ver.outputs.url }}"
           Invoke-WebRequest -Uri '${{ steps.ver.outputs.url }}' -OutFile $zip
           $sha = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
@@ -79,41 +78,34 @@ jobs:
           if ($digest -and $digest -ne "sha256:$sha") {
               throw "winappcli-x64.zip digest mismatch: upstream says $digest, downloaded sha256:$sha"
           }
-          if ($digest) { Write-Host "upstream sha256:$sha (matches upstream digest)" }
-          else { Write-Host "upstream sha256:$sha (no upstream digest published, recorded)" }
+          if ($digest) { Write-Host "winappcli-x64.zip sha256:$sha (matches upstream digest)" }
+          else { Write-Host "winappcli-x64.zip sha256:$sha (no upstream digest published, recorded)" }
 
           Add-Type -AssemblyName System.IO.Compression.FileSystem
           $archive = [IO.Compression.ZipFile]::OpenRead($zip)
           try { $entries = @($archive.Entries | ForEach-Object FullName) } finally { $archive.Dispose() }
-          if ($entries -notcontains 'winapp.exe') { throw 'invalid upstream zip layout: winapp.exe not at zip root' }
+          if ($entries -notcontains 'winapp.exe') { throw 'invalid zip layout: winapp.exe not at zip root' }
 
           [IO.File]::AppendAllText($env:GITHUB_OUTPUT, "zip=$zip`nsha=$sha`n")
 
-      - name: Package
+      - name: Smoke test
         if: steps.ver.outputs.skip != 'true'
-        id: pkg
         env:
           WINAPP_CLI_TELEMETRY_OPTOUT: '1'
         run: |
           $ErrorActionPreference = 'Stop'
           $ver = '${{ steps.ver.outputs.ver }}'
-          $tag = '${{ steps.ver.outputs.tag }}'
           $stage = Join-Path $env:RUNNER_TEMP 'stage'
           if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
           New-Item -ItemType Directory -Path $stage | Out-Null
 
           Add-Type -AssemblyName System.IO.Compression.FileSystem
-          Write-Host 'Extracting upstream zip'
-          [IO.Compression.ZipFile]::ExtractToDirectory('${{ steps.dl.outputs.zip }}', $stage)
-
-          # Debug symbols are not needed at runtime and account for most of the archive size.
-          Get-ChildItem $stage -Filter '*.pdb' -File -Recurse | Remove-Item -Force
-          if (Get-ChildItem $stage -Filter '*.pdb' -File -Recurse) { throw 'failed to remove debug symbols' }
-
-          # Redistributing under MIT requires the upstream license text.
-          $licenseUrl = "https://raw.githubusercontent.com/microsoft/winappCli/$tag/LICENSE"
-          Write-Host "Downloading $licenseUrl"
-          Invoke-WebRequest -Uri $licenseUrl -OutFile (Join-Path $stage 'LICENSE.txt')
+          $archive = [IO.Compression.ZipFile]::OpenRead('${{ steps.dl.outputs.zip }}')
+          try {
+              $entry = $archive.GetEntry('winapp.exe')
+              if (-not $entry) { throw 'winapp.exe missing from zip' }
+              [IO.Compression.ZipFileExtensions]::ExtractToFile($entry, (Join-Path $stage 'winapp.exe'), $true)
+          } finally { $archive.Dispose() }
 
           $exe = Join-Path $stage 'winapp.exe'
           if ((Get-Item $exe).Length -lt 10MB) { throw 'winapp.exe is suspiciously small' }
@@ -126,76 +118,13 @@ jobs:
               throw "unexpected winapp version output (expected $ver): $out"
           }
 
-          $zip = Join-Path $env:RUNNER_TEMP 'winappcli-x64.zip'
-          if (Test-Path $zip) { Remove-Item $zip -Force }
-          [IO.Compression.ZipFile]::CreateFromDirectory($stage, $zip, [IO.Compression.CompressionLevel]::Optimal, $false)
-          $sha = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
-          $size = (Get-Item $zip).Length
-          Write-Host "winappcli-x64.zip  $size bytes  sha256:$sha"
-
-          $archive = [IO.Compression.ZipFile]::OpenRead($zip)
-          try { $entries = @($archive.Entries | ForEach-Object FullName) } finally { $archive.Dispose() }
-          foreach ($required in @('winapp.exe', 'LICENSE.txt')) {
-              if ($entries -notcontains $required) { throw "invalid zip layout: $required not at zip root" }
-          }
-          if ($entries -match '\.pdb$') { throw 'invalid zip layout: debug symbols leaked into the package' }
-          Write-Host "zip layout OK ($($entries.Count) entries, root-flat)"
-
-          [IO.File]::AppendAllText($env:GITHUB_OUTPUT, "zip=$zip`nsha=$sha`n")
-
-      - name: Publish release
-        if: steps.ver.outputs.skip != 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $PSNativeCommandUseErrorActionPreference = $false
-
-          $ver = '${{ steps.ver.outputs.ver }}'
-          $tag = '${{ steps.ver.outputs.tag }}'
-          $upstreamSha = '${{ steps.dl.outputs.sha }}'
-          $zip = '${{ steps.pkg.outputs.zip }}'
-          $sha = '${{ steps.pkg.outputs.sha }}'
-          $repo = '${{ github.repository }}'
-          $relTag = "winappcli-v$ver"
-
-          $notes = @'
-          ## WinApp CLI {0} (portable, windows-x64)
-
-          - Upstream release: https://github.com/microsoft/winappCli/releases/tag/{1}
-          - Repackaged from upstream `winappcli-x64.zip` (sha256: {2})
-          - Debug symbols (*.pdb) removed; winapp.exe, native DLLs, DevTools schema and LICENSE.txt retained
-          - SHA256: {3}
-
-          Install with Scoop:
-
-              scoop bucket add scoop-epubcheck https://github.com/{4}
-              scoop install winappcli
-          '@ -f $ver, $tag, $upstreamSha, $sha, $repo
-
-          $notesFile = Join-Path $env:RUNNER_TEMP 'release-notes.md'
-          Set-Content -Path $notesFile -Value $notes -Encoding utf8NoBOM
-
-          if (gh release view $relTag 2>$null) {
-              Write-Host "Release $relTag already exists, refreshing assets and notes"
-              gh release upload $relTag $zip --clobber
-              if ($LASTEXITCODE -ne 0) { throw "gh release upload failed (exit $LASTEXITCODE)" }
-              gh release edit $relTag --notes-file $notesFile
-              if ($LASTEXITCODE -ne 0) { throw "gh release edit failed (exit $LASTEXITCODE)" }
-          } else {
-              # --latest=false keeps the EPUBCheck release as the repository's latest
-              gh release create $relTag $zip --title "WinApp CLI $ver" --notes-file $notesFile --latest=false
-              if ($LASTEXITCODE -ne 0) { throw "gh release create failed (exit $LASTEXITCODE)" }
-          }
-          Write-Host "Published https://github.com/$repo/releases/tag/$relTag"
-
       - name: Update manifest
         if: steps.ver.outputs.skip != 'true'
         run: |
           $ErrorActionPreference = 'Stop'
           $ver = '${{ steps.ver.outputs.ver }}'
-          $sha = '${{ steps.pkg.outputs.sha }}'
-          $url = "https://github.com/${{ github.repository }}/releases/download/winappcli-v$ver/winappcli-x64.zip"
+          $sha = '${{ steps.dl.outputs.sha }}'
+          $url = "https://github.com/microsoft/winappCli/releases/download/v$ver/winappcli-x64.zip"
           $p = 'bucket/winappcli.json'
 
           $lines = Get-Content $p
@@ -210,7 +139,7 @@ jobs:
           if ($m.version -ne $ver) { throw "manifest version not updated (got $($m.version))" }
           if ($m.url -ne $url) { throw 'manifest url not updated' }
           if ($m.hash -ne "sha256:$sha") { throw 'manifest hash not updated' }
-          if ($m.autoupdate.url -notlike '*winappcli-v$version*') { throw 'autoupdate url template was clobbered' }
+          if ($m.autoupdate.url -ne 'https://github.com/microsoft/winappCli/releases/download/v$version/winappcli-x64.zip') { throw 'autoupdate url template was clobbered' }
           Write-Host "Manifest updated to $ver"
           Get-Content $p | Write-Host
 
