@@ -1,0 +1,157 @@
+name: update-winappcli
+
+on:
+  schedule:
+    - cron: '29 5 * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Force update even if the version is unchanged'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-winappcli
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Resolve version
+        id: ver
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $false
+
+          $rel = gh api repos/microsoft/winappCli/releases/latest | ConvertFrom-Json
+          if (-not $rel) { throw 'Failed to query microsoft/winappCli latest release' }
+          $tag = $rel.tag_name
+          $ver = $tag -replace '^[vV]', ''
+          if ($ver -notmatch '^[\w.\-+_]+$') { throw "Unexpected upstream version derived from tag: $tag" }
+          $asset = @($rel.assets) | Where-Object { $_.name -eq 'winappcli-x64.zip' } | Select-Object -First 1
+          if (-not $asset) { throw "No winappcli-x64.zip asset found in upstream release $tag" }
+
+          $current = ''
+          if (Test-Path 'bucket/winappcli.json') {
+              $current = (Get-Content 'bucket/winappcli.json' -Raw | ConvertFrom-Json).version
+          }
+          $force = ('${{ inputs.force }}' -eq 'true')
+          $skip = ($ver -eq $current) -and -not $force
+
+          Write-Host "winappcli: $ver (tag $tag)"
+          Write-Host "Asset    : $($asset.name)"
+          Write-Host "Target   : $ver | manifest: $current$(if ($skip) { ' -> up to date, skipping' })"
+
+          function out([string]$k, [string]$v) {
+              [IO.File]::AppendAllText($env:GITHUB_OUTPUT, "$k=$v`n")
+          }
+          out 'skip'   ($skip.ToString().ToLower())
+          out 'ver'    $ver
+          out 'url'    $asset.browser_download_url
+          out 'digest' "$($asset.digest)"
+
+      - name: Download and verify
+        if: steps.ver.outputs.skip != 'true'
+        id: dl
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $false
+
+          $zip = Join-Path $env:RUNNER_TEMP 'winappcli-x64.zip'
+          Write-Host "Downloading ${{ steps.ver.outputs.url }}"
+          Invoke-WebRequest -Uri '${{ steps.ver.outputs.url }}' -OutFile $zip
+          $sha = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+          $digest = '${{ steps.ver.outputs.digest }}'
+          if ($digest -and $digest -ne "sha256:$sha") {
+              throw "winappcli-x64.zip digest mismatch: upstream says $digest, downloaded sha256:$sha"
+          }
+          if ($digest) { Write-Host "winappcli-x64.zip sha256:$sha (matches upstream digest)" }
+          else { Write-Host "winappcli-x64.zip sha256:$sha (no upstream digest published, recorded)" }
+
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $archive = [IO.Compression.ZipFile]::OpenRead($zip)
+          try { $entries = @($archive.Entries | ForEach-Object FullName) } finally { $archive.Dispose() }
+          if ($entries -notcontains 'winapp.exe') { throw 'invalid zip layout: winapp.exe not at zip root' }
+
+          [IO.File]::AppendAllText($env:GITHUB_OUTPUT, "zip=$zip`nsha=$sha`n")
+
+      - name: Smoke test
+        if: steps.ver.outputs.skip != 'true'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ver = '${{ steps.ver.outputs.ver }}'
+          $stage = Join-Path $env:RUNNER_TEMP 'stage'
+          if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+          New-Item -ItemType Directory -Path $stage | Out-Null
+
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $archive = [IO.Compression.ZipFile]::OpenRead('${{ steps.dl.outputs.zip }}')
+          try {
+              $entry = $archive.GetEntry('winapp.exe')
+              if (-not $entry) { throw 'winapp.exe missing from zip' }
+              [IO.Compression.ZipFileExtensions]::ExtractToFile($entry, (Join-Path $stage 'winapp.exe'), $true)
+          } finally { $archive.Dispose() }
+
+          $exe = Join-Path $stage 'winapp.exe'
+          if ((Get-Item $exe).Length -lt 10MB) { throw 'winapp.exe is suspiciously small' }
+          $out = (& $exe --version | Out-String).Trim()
+          Write-Host "winapp --version: $out"
+          if ($out -ne $ver) { throw "unexpected winapp version: $out (expected $ver)" }
+
+      - name: Update manifest
+        if: steps.ver.outputs.skip != 'true'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ver = '${{ steps.ver.outputs.ver }}'
+          $sha = '${{ steps.dl.outputs.sha }}'
+          $url = "https://github.com/microsoft/winappCli/releases/download/v$ver/winappcli-x64.zip"
+          $p = 'bucket/winappcli.json'
+
+          $lines = Get-Content $p
+          # Only rewrite the four-space-indented top-level fields; the eight-space
+          # autoupdate.url template must keep its $version placeholder.
+          $lines = $lines -replace '^(    "version":\s*")[^"]*(")', "`${1}$ver`${2}"
+          $lines = $lines -replace '^(    "url":\s*")[^"]*(")', "`${1}$url`${2}"
+          $lines = $lines -replace '^(    "hash":\s*")[^"]*(")', "`${1}sha256:$sha`${2}"
+          $lines | Set-Content $p -Encoding utf8NoBOM
+
+          $m = Get-Content $p -Raw | ConvertFrom-Json
+          if ($m.version -ne $ver) { throw "manifest version not updated (got $($m.version))" }
+          if ($m.url -ne $url) { throw 'manifest url not updated' }
+          if ($m.hash -ne "sha256:$sha") { throw 'manifest hash not updated' }
+          if ($m.autoupdate.url -notlike '*$version*') { throw 'autoupdate url template was clobbered' }
+          Write-Host "Manifest updated to $ver"
+          Get-Content $p | Write-Host
+
+      - name: Commit manifest
+        if: steps.ver.outputs.skip != 'true'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $false
+          $ver = '${{ steps.ver.outputs.ver }}'
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add bucket/winappcli.json
+          git diff --cached --quiet
+          if ($LASTEXITCODE -eq 0) {
+              Write-Host 'Manifest unchanged, nothing to commit'
+              exit 0
+          }
+          git commit -m "winappcli: update to $ver"
+          if ($LASTEXITCODE -ne 0) { throw 'git commit failed' }
+          git push
+          if ($LASTEXITCODE -ne 0) { throw 'git push failed' }

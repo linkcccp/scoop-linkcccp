@@ -1,6 +1,6 @@
 # scoop-epubcheck
 
-A [Scoop](https://scoop.sh) bucket for 64-bit Windows providing self-contained packages for [EPUBCheck](https://github.com/w3c/epubcheck) and [OpenReadest](https://github.com/luyishui/OpenReadest). 32-bit Windows is not supported.
+A [Scoop](https://scoop.sh) bucket for 64-bit Windows providing self-contained packages for [EPUBCheck](https://github.com/w3c/epubcheck), [OpenReadest](https://github.com/luyishui/OpenReadest), and the [WinApp CLI](https://github.com/microsoft/winappCli). 32-bit Windows is not supported.
 
 ## EPUBCheck
 
@@ -23,12 +23,23 @@ The bucket ships a **portable build repackaged from the official Windows install
 
 Unlike the stock installer, the portable package runs without UAC and makes **no registry changes and no file associations** (no epub/pdf association takeover, no thumbnail handler registration, no `openreadest://` deep link). App data lives in `%APPDATA%\com.openreadest.app`, outside of Scoop's directory. The app requires the Microsoft Edge WebView2 Runtime (preinstalled on Windows 11 and up-to-date Windows 10).
 
+## WinApp CLI
+
+[WinApp CLI](https://github.com/microsoft/winappCli) is Microsoft's command-line tool for Windows SDK setup, MSIX packaging, package identity, manifests, certificates, and build tools (MIT).
+
+The bucket installs the upstream **portable x64 release** (`winappcli-x64.zip`, no installer):
+
+- `winapp.exe` — the CLI, together with its native dependencies
+
+Unlike the WinGet/MSIX distribution, this build runs unpackaged, so `winapp run` can register and unregister development packages normally (the MSIX build runs in a package container where deployment calls fail).
+
 ## Install
 
 ```powershell
 scoop bucket add scoop-epubcheck https://github.com/linkcccp/scoop-epubcheck
 scoop install epubcheck
 scoop install openreadest
+scoop install winappcli
 ```
 
 ## Usage
@@ -44,12 +55,20 @@ OpenReadest is a GUI app — start it from the Start Menu shortcut, through the 
 openreadest my-book.epub
 ```
 
+WinApp CLI is a command-line tool:
+
+```powershell
+winapp --version
+winapp run .
+```
+
 ## How updates work
 
 A scheduled GitHub Action runs daily per app:
 
 1. [update-epubcheck.yml](.github/workflows/update-epubcheck.yml) detects the latest upstream EPUBCheck release and the latest Temurin 21 JRE, downloads both, verifies checksums, assembles and smoke-tests a bundled release archive, publishes a release tagged `v<epubcheck>-jre<jre>` (e.g. `v5.4.0-jre21.0.12.1`) and updates [bucket/epubcheck.json](bucket/epubcheck.json).
 2. [update-openreadest.yml](.github/workflows/update-openreadest.yml) detects the latest upstream OpenReadest release, verifies the installer against the upstream digest, extracts it with 7-Zip into a portable package (static smoke test, license files included), publishes a release tagged `openreadest-v<version>` (e.g. `openreadest-v0.9.100`) and updates [bucket/openreadest.json](bucket/openreadest.json).
+3. [update-winappcli.yml](.github/workflows/update-winappcli.yml) detects the latest upstream WinApp CLI release, downloads and verifies `winappcli-x64.zip`, smoke-tests `winapp.exe --version`, and updates [bucket/winappcli.json](bucket/winappcli.json) in place (the manifest points directly at the upstream release asset).
 
 OpenReadest releases are published with `--latest=false` so the EPUBCheck release keeps the repository's *latest* badge.
 
@@ -59,6 +78,7 @@ The manifests can also be refreshed manually with `scoop update` / `scoop status
 
 - `bin\checkver.ps1 epubcheck` — compare the epubcheck manifest version with published releases (add `-Update` to rewrite it)
 - `bin\checkver.ps1 openreadest` — same for the openreadest manifest
+- `bin\checkver.ps1 winappcli` — same for the winappcli manifest
 - `bin\test.ps1` — run the official Scoop bucket test suite: manifest schema validation plus repository style checks (requires PowerShell Pester ≥ 5.2 and BuildHelpers)
 
 ## Disclaimer
@@ -66,3 +86,5 @@ The manifests can also be refreshed manually with `scoop update` / `scoop status
 Unofficial packaging. EPUBCheck is developed by the [W3C](https://www.w3.org/); this bucket is not affiliated with or endorsed by the W3C or the Eclipse Adoptium project.
 
 OpenReadest is an unofficial fork of Readest maintained by [luyishui](https://github.com/luyishui/OpenReadest) and licensed [AGPL-3.0](https://github.com/luyishui/OpenReadest/blob/master/LICENSE); this bucket is not affiliated with the Readest project or the OpenReadest author. Repackaging notes for each release are published in the [release notes](https://github.com/linkcccp/scoop-epubcheck/releases).
+
+WinApp CLI is developed by [Microsoft](https://github.com/microsoft/winappCli) and licensed [MIT](https://github.com/microsoft/winappCli/blob/main/LICENSE); this bucket is not affiliated with or endorsed by Microsoft.

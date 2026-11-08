@@ -1,0 +1,15 @@
+{
+    "version": "0.8.0",
+    "description": "Windows App Development CLI (winapp CLI) for managing Windows SDKs, packaging, app identity, manifests, certificates, and build tools.",
+    "homepage": "https://github.com/microsoft/winappCli",
+    "license": "MIT",
+    "url": "https://github.com/microsoft/winappCli/releases/download/v0.8.0/winappcli-x64.zip",
+    "hash": "sha256:67a8e1d39421a5ef5309c7017327c6a70ea6215a0e56e47ec22a7e9ec3b914e6",
+    "bin": "winapp.exe",
+    "checkver": {
+        "github": "https://github.com/microsoft/winappCli"
+    },
+    "autoupdate": {
+        "url": "https://github.com/microsoft/winappCli/releases/download/v$version/winappcli-x64.zip"
+    }
+}
