@@ -1,4 +1,4 @@
-# scoop-epubcheck
+# scoop-linkcccp
 
 A [Scoop](https://scoop.sh) bucket for 64-bit Windows providing self-contained packages for [EPUBCheck](https://github.com/w3c/epubcheck), [OpenReadest](https://github.com/luyishui/OpenReadest), and the [WinApp CLI](https://github.com/microsoft/winappCli). 32-bit Windows is not supported.
 
@@ -36,7 +36,7 @@ Unlike the WinGet/MSIX distribution, this build runs unpackaged, so `winapp run`
 ## Install
 
 ```powershell
-scoop bucket add scoop-epubcheck https://github.com/linkcccp/scoop-epubcheck
+scoop bucket add scoop-linkcccp https://github.com/linkcccp/scoop-linkcccp
 scoop install epubcheck
 scoop install openreadest
 scoop install winappcli
@@ -85,6 +85,6 @@ The manifests can also be refreshed manually with `scoop update` / `scoop status
 
 Unofficial packaging. EPUBCheck is developed by the [W3C](https://www.w3.org/); this bucket is not affiliated with or endorsed by the W3C or the Eclipse Adoptium project.
 
-OpenReadest is an unofficial fork of Readest maintained by [luyishui](https://github.com/luyishui/OpenReadest) and licensed [AGPL-3.0](https://github.com/luyishui/OpenReadest/blob/master/LICENSE); this bucket is not affiliated with the Readest project or the OpenReadest author. Repackaging notes for each release are published in the [release notes](https://github.com/linkcccp/scoop-epubcheck/releases).
+OpenReadest is an unofficial fork of Readest maintained by [luyishui](https://github.com/luyishui/OpenReadest) and licensed [AGPL-3.0](https://github.com/luyishui/OpenReadest/blob/master/LICENSE); this bucket is not affiliated with the Readest project or the OpenReadest author. Repackaging notes for each release are published in the [release notes](https://github.com/linkcccp/scoop-linkcccp/releases).
 
 WinApp CLI is developed by [Microsoft](https://github.com/microsoft/winappCli) and licensed [MIT](https://github.com/microsoft/winappCli/blob/main/LICENSE); this bucket is not affiliated with or endorsed by Microsoft.

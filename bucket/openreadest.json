@@ -3,7 +3,7 @@
     "description": "Unofficial Readest fork focused on local reading with WebDAV sync, repackaged as a portable build (Tauri/WebView2, 64-bit Windows).",
     "homepage": "https://github.com/luyishui/OpenReadest",
     "license": "AGPL-3.0",
-    "url": "https://github.com/linkcccp/scoop-epubcheck/releases/download/openreadest-v0.9.101/openreadest-0.9.101.zip",
+    "url": "https://github.com/linkcccp/scoop-linkcccp/releases/download/openreadest-v0.9.101/openreadest-0.9.101.zip",
     "hash": "sha256:576e6ded6e11217e59358e83ac6463217ff66b6ae619101023db47e4425dc23c",
     "bin": "openreadest.exe",
     "shortcuts": [
@@ -13,10 +13,10 @@
         ]
     ],
     "checkver": {
-        "url": "https://github.com/linkcccp/scoop-epubcheck/releases",
+        "url": "https://github.com/linkcccp/scoop-linkcccp/releases",
         "regex": "/releases/tag/openreadest-v([\\d.]+)"
     },
     "autoupdate": {
-        "url": "https://github.com/linkcccp/scoop-epubcheck/releases/download/openreadest-v$version/openreadest-$version.zip"
+        "url": "https://github.com/linkcccp/scoop-linkcccp/releases/download/openreadest-v$version/openreadest-$version.zip"
     }
 }

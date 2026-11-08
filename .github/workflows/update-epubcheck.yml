@@ -224,7 +224,7 @@ jobs:
 
           Install with Scoop:
 
-              scoop bucket add scoop-epubcheck https://github.com/{4}
+              scoop bucket add scoop-linkcccp https://github.com/{4}
               scoop install epubcheck
           '@ -f $ecVer, $jreVer, $env:JRE_MAJOR, $sha, $repo
 

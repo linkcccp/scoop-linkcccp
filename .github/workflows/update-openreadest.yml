@@ -210,7 +210,7 @@ jobs:
 
           Install with Scoop:
 
-              scoop bucket add scoop-epubcheck https://github.com/{5}
+              scoop bucket add scoop-linkcccp https://github.com/{5}
               scoop install openreadest
           '@ -f $ver, $tag, $fname, $assetSha, $sha, $repo
 
