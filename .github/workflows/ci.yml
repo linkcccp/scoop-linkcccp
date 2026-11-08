@@ -10,11 +10,15 @@ permissions:
 
 jobs:
   test:
-    name: Test
+    name: Test (${{ matrix.name }})
     runs-on: windows-latest
     strategy:
       matrix:
-        shell: [powershell, pwsh]
+        include:
+          - shell: powershell
+            name: Windows PowerShell 5.1
+          - shell: pwsh
+            name: PowerShell 7
     defaults:
       run:
         shell: ${{ matrix.shell }}
